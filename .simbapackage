@@ -1,0 +1,8 @@
+// The package name to install under. Can be empty to install directly into the directory
+name=Tesseract
+// The directory to install into from simba's executable location.
+directory=Includes
+// flat extraction.
+flat=false
+// Files or directories not to install delimited with commas.
+ignore=.gitignore,.simbapackage

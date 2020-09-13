@@ -1,0 +1,241 @@
+{$loadlib libtesseract}
+
+const
+  STR_UPPERCASE  = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  STR_LOWERCASE  = 'abcdefghijklmnopqrstuvwxyz';
+  STR_LETTERS    = STR_UPPERCASE + STR_LOWERCASE;
+  STR_DIGITS     = '0123456789';
+  STR_NUMBER     = STR_DIGITS + ',.';
+  STR_SYMBOLS    = '.,-<>?+=()/\*@![]#';
+  STR_WHITESPACE = #10+#13+#32;
+  STR_EVERYTHING = STR_WHITESPACE + STR_LETTERS + STR_DIGITS + STR_SYMBOLS;
+
+type
+  TTesseractMatch = record
+    Text: String;
+    Bounds: TBox;
+    Confidence: Single;
+  end;
+  TTesseractMatchArray = array of TTesseractMatch;
+
+  TTesseractOCR = record
+    PADDING: Int32;
+    RESIZE_MULTIPLIER: Single;
+
+    Instance: Pointer;
+
+    Area: TBox;
+    Bitmap: TMufasaBitmap;
+  end;
+
+procedure TTesseractOCR.SetWhitelist(Value: String);
+begin
+  if (Value = '') then
+    Value := #0;
+
+  Tesseract_SetVariable(Self.Instance, 'tessedit_char_whitelist', Value);
+end;
+
+procedure TTesseractOCR.SetBlacklist(Value: String);
+begin
+  if (Value = '') then
+    Value := #0;
+
+  Tesseract_SetVariable(Self.Instance, 'tessedit_char_blacklist', Value);
+end;
+
+function TTesseractOCR.GetText: String;
+var
+  Text: PChar;
+  TextLength: Int32;
+begin
+  Text := Tesseract_GetUTF8Text(Self.Instance, TextLength);
+
+  SetLength(Result, TextLength);
+  if (TextLength > 0) then
+    MemMove(Text^, Result[1], TextLength);
+
+  Result := Trim(StringReplace(Result, #10, LineEnding, [rfReplaceAll]));
+
+  Tesseract_FreeUTF8Text(Text);
+end;
+
+(*
+ * If the text is BRIGHTER than the background the threshold will be greater than 0.
+ * If the text is DARKER than the background the threshold will be less than 0.
+ *
+ * - Generally speaking the higher the threshold is the more the text will be eroded.
+ * - Call TesseractOCR.Debug() after this to see what the image was processed into.
+ *)
+function TTesseractOCR.Recognize(Area: TBox; Threshold: Int32): String; overload;
+var
+  Width, Height: Int32;
+begin
+  if (Self.Bitmap <> nil) then
+  begin
+    Self.Bitmap.Free();
+    Self.Bitmap := nil;
+  end;
+
+  Self.Area := Area;
+  Self.Bitmap := GetMufasaBitmap(BitmapFromClient(Self.Area.X1, Self.Area.Y1, Self.Area.X2, Self.Area.Y2));
+
+  // Assume smallest font is is 8px
+  // Tesseract wants something like 30px. so 8*4 = 32
+  Width := Trunc(Self.Bitmap.GetWidth() * Self.RESIZE_MULTIPLIER);
+  Height := Trunc(Self.Bitmap.GetHeight() * Self.RESIZE_MULTIPLIER);
+
+  // Keep bitmap dimensions as multiple of 8
+  Width := Width + (8 - Width mod 8);
+  Height := Height + (8 - Height mod 8);
+
+  // Seems to work well.
+  Self.Bitmap.ResizeEx(RM_Bilinear, Width, Height);
+  Self.Bitmap.ThresholdAdaptive(255, 0, Threshold < 0, TM_Mean, Threshold);
+  Self.Bitmap.Pad(Self.PADDING);
+  Self.Bitmap.Blur(3);
+  Self.Bitmap.ThresholdAdaptive(255, 0, False, TM_Mean, 15);
+
+  Result := Self.Recognize(Self.Bitmap);
+end;
+
+function TTesseractOCR.Recognize(Bitmap: TMufasaBitmap): String; overload;
+begin
+  Tesseract_SetImage(Self.Instance, Bitmap.GetData(), Bitmap.GetWidth(), Bitmap.GetHeight(), 4, Bitmap.GetWidth() * 4);
+
+  Result := Self.GetText();
+end;
+
+type
+  TTesseractGetMatch = procedure(Tesseract: Pointer; Index: Int32; var Text: PChar; var Len: Int32; var Confidence: Single; var X1, Y1, X2, Y2: Int32);
+  TTesseractGetMatchCount = function(Tesseract: Pointer): Int32;
+
+function TTesseractOCR.GetMatches(GetMatch: TTesseractGetMatch; GetMatchCount: TTesseractGetMatchCount): TTesseractMatchArray;
+var
+  I: Int32;
+  Text: PChar;
+  TextLength: Int32;
+  B: TBox;
+  Confidence: Single;
+  ScaleX, ScaleY: Single;
+begin
+  ScaleX := (Self.Bitmap.GetWidth()  - Self.PADDING * 2) / (Area.X2 - Area.X1);
+  ScaleY := (Self.Bitmap.GetHeight() - Self.PADDING * 2) / (Area.Y2 - Area.Y1);
+
+  SetLength(Result, GetMatchCount(Self.Instance));
+
+  for I := 0 to High(Result) do
+  begin
+    GetMatch(Self.Instance, I, Text, TextLength, Confidence, B.X1, B.Y1, B.X2, B.Y2);
+
+    B.X1 := Self.Area.X1 + Round((B.X1 - Self.PADDING) / ScaleX);
+    B.Y1 := Self.Area.Y1 + Round((B.Y1 - Self.PADDING) / ScaleY);
+    B.X2 := Self.Area.X1 + Round((B.X2 - Self.PADDING) / ScaleX);
+    B.Y2 := Self.Area.Y1 + Round((B.Y2 - Self.PADDING) / ScaleY);
+
+    Result[I].Confidence := Confidence;
+    Result[I].Bounds := B;
+
+    SetLength(Result[I].Text, TextLength);
+    if (TextLength > 0) then
+      MemMove(Text^, Result[I].Text[1], TextLength);
+
+    Tesseract_FreeUTF8Text(Text);
+  end;
+end;
+
+function TTesseractOCR.GetCharacterMatches: TTesseractMatchArray;
+begin
+  Result := GetMatches(@Tesseract_GetCharacterMatch, @Tesseract_GetCharacterCount);
+end;
+
+function TTesseractOCR.GetWordMatches: TTesseractMatchArray;
+begin
+  Result := GetMatches(@Tesseract_GetWordMatch, @Tesseract_GetWordCount);
+end;
+
+function TTesseractOCR.GetLineMatches: TTesseractMatchArray;
+begin
+  Result := GetMatches(@Tesseract_GetLineMatch, @Tesseract_GetLineCount);
+end;
+
+function TTesseractOCR.GetBlockMatches: TTesseractMatchArray;
+begin
+  Result := GetMatches(@Tesseract_GetBlockMatch, @Tesseract_GetBlockCount);
+end;
+
+function TTesseractOCR.GetTextBounds: TBox;
+var
+  Matches: TTesseractMatchArray;
+begin
+  Matches := Self.GetBlockMatches();
+  if Length(Matches) > 0 then
+    Result := Matches[0].Bounds;
+end;
+
+procedure TTesseractOCR.Debug;
+var
+  Match: TTesseractMatch;
+  E: TExtendedArray;
+begin
+  WriteLn('--------------------------------------------------');
+  WriteLn('TEXT:');
+  Write(' ');
+  WriteLn('"', GetText(), '"');
+
+  WriteLn('MATCHES:');
+  Write(' ');
+  for Match in GetCharacterMatches() do
+    Write('"', Match.Text, '" ', Match.Confidence, ', ');
+  WriteLn();
+
+  WriteLn('AVERAGE:');
+  Write(' ');
+  for Match in GetCharacterMatches() do
+    E += Match.Confidence;
+  WriteLn(AverageExtended(E));
+  WriteLn('--------------------------------------------------');
+
+  ShowBitmap(Self.Bitmap);
+end;
+
+procedure TTesseractOCR.Free;
+begin
+  if (Self.Bitmap <> nil) then
+    Self.Bitmap.Free();
+
+  Tesseract_End(Self.Instance);
+  Tesseract_Delete(Self.Instance);
+end;
+
+procedure TTesseractOCR.Setup;
+begin
+  Self.PADDING := 24;
+  Self.RESIZE_MULTIPLIER := 4;
+
+  Self.Instance := Tesseract_Create();
+
+  Tesseract_Init(Self.Instance, {$MACRO CURRENT_DIRECTORY} + '/tessdata', 'eng');
+  Tesseract_SetVariable(Self.Instance, 'user_defined_dpi', '70');
+
+  AddOnTerminate(@Self.Free);
+end;
+
+var
+  TesseractOCR: TTesseractOCR;
+
+begin
+  TesseractOCR.Setup();
+
+  //SetTargetBitmap(BitmapFromString(50, 20, 'meJwz0ZExGUWjaBQNAnTy+CE4+v//v7+HFS5BJyvt1obya1cvZaVEYpoDlIKoryjKIMNwTMTHww5Efr6e+/ftZWBg0FWTwCoYG+Y5sbf10sXz3t4eagqiaIYAnSovJaino3H//j1/LydSDccVaOtWL8nLSgYqxiOopSx26OB+rK4CIojg1SsXLS3MgCpJNRwTAYPxyeOHokLcyrLC+AWBwQ70I6argIon97UBZYEkFycbsquINxwNAY3q725hZ2MhKIjLVcBUl5oQVl6Sf/7cWSszffIMR0MfP37QVpOXEecnKIjLVUBkqCkFFO9obaipqUJOKsQbjoyA2QcYxczMTEBj8QtiddX1a5cgYQXh7t65GRhicOtIMhwZATO7j4cjMIrxCwLzINBJQD8C42jW9ElwQWDu5uJkBao/cewQkARGjSA/JzA/kmQ4VoSWPnEJArnALAP0I1BKQpQXElCh/q7A3A1RD5QFkmjxQqTh1EXAgKKp+aNoFFGIALiueNI='));
+  //
+  //WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 30);
+  //WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 25);
+  //WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 20);
+  //WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 15);
+  //WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 10);
+  //WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 5);
+  //WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 0);
+  //
+  //TesseractOCR.Debug();
+end;
