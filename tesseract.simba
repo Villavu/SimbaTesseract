@@ -81,20 +81,17 @@ begin
   Self.Bitmap := GetMufasaBitmap(BitmapFromClient(Self.Area.X1, Self.Area.Y1, Self.Area.X2, Self.Area.Y2));
 
   // Assume smallest font is is 8px
-  // Tesseract wants something like 30px. so 8*4 = 32
+  // Tesseract wants something like ~25px. 8*3.5 = 28
   Width := Trunc(Self.Bitmap.GetWidth() * Self.RESIZE_MULTIPLIER);
   Height := Trunc(Self.Bitmap.GetHeight() * Self.RESIZE_MULTIPLIER);
-
-  // Keep bitmap dimensions as multiple of 8
-  Width := Width + (8 - Width mod 8);
-  Height := Height + (8 - Height mod 8);
 
   // Seems to work well.
   Self.Bitmap.ResizeEx(RM_Bilinear, Width, Height);
   Self.Bitmap.ThresholdAdaptive(255, 0, Threshold < 0, TM_Mean, Threshold);
-  Self.Bitmap.Pad(Self.PADDING);
   Self.Bitmap.Blur(3);
-  Self.Bitmap.ThresholdAdaptive(255, 0, False, TM_Mean, 15);
+  Self.Bitmap.Pad(Self.PADDING);
+  Self.Bitmap.ReplaceColor(0, $FFFFFF);
+  Self.Bitmap.ReplaceColor(255, 0);
 
   Result := Self.Recognize(Self.Bitmap);
 end;
@@ -210,8 +207,8 @@ end;
 
 procedure TTesseractOCR.Setup;
 begin
-  Self.PADDING := 24;
-  Self.RESIZE_MULTIPLIER := 4;
+  Self.PADDING := 10;
+  Self.RESIZE_MULTIPLIER := 3.5;
 
   Self.Instance := Tesseract_Create();
 
@@ -227,15 +224,18 @@ var
 begin
   TesseractOCR.Setup();
 
-  //SetTargetBitmap(BitmapFromString(50, 20, 'meJwz0ZExGUWjaBQNAnTy+CE4+v//v7+HFS5BJyvt1obya1cvZaVEYpoDlIKoryjKIMNwTMTHww5Efr6e+/ftZWBg0FWTwCoYG+Y5sbf10sXz3t4eagqiaIYAnSovJaino3H//j1/LydSDccVaOtWL8nLSgYqxiOopSx26OB+rK4CIojg1SsXLS3MgCpJNRwTAYPxyeOHokLcyrLC+AWBwQ70I6argIon97UBZYEkFycbsquINxwNAY3q725hZ2MhKIjLVcBUl5oQVl6Sf/7cWSszffIMR0MfP37QVpOXEecnKIjLVUBkqCkFFO9obaipqUJOKsQbjoyA2QcYxczMTEBj8QtiddX1a5cgYQXh7t65GRhicOtIMhwZATO7j4cjMIrxCwLzINBJQD8C42jW9ElwQWDu5uJkBao/cewQkARGjSA/JzA/kmQ4VoSWPnEJArnALAP0I1BKQpQXElCh/q7A3A1RD5QFkmjxQqTh1EXAgKKp+aNoFFGIALiueNI='));
-  //
-  //WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 30);
-  //WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 25);
-  //WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 20);
-  //WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 15);
-  //WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 10);
-  //WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 5);
-  //WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 0);
-  //
-  //TesseractOCR.Debug();
+  {
+  SetTargetBitmap(BitmapFromString(50, 20, 'meJwz0ZExGUWjaBQNAnTy+CE4+v//v7+HFS5BJyvt1obya1cvZaVEYpoDlIKoryjKIMNwTMTHww5Efr6e+/ftZWBg0FWTwCoYG+Y5sbf10sXz3t4eagqiaIYAnSovJaino3H//j1/LydSDccVaOtWL8nLSgYqxiOopSx26OB+rK4CIojg1SsXLS3MgCpJNRwTAYPxyeOHokLcyrLC+AWBwQ70I6argIon97UBZYEkFycbsquINxwNAY3q725hZ2MhKIjLVcBUl5oQVl6Sf/7cWSszffIMR0MfP37QVpOXEecnKIjLVUBkqCkFFO9obaipqUJOKsQbjoyA2QcYxczMTEBj8QtiddX1a5cgYQXh7t65GRhicOtIMhwZATO7j4cjMIrxCwLzINBJQD8C42jW9ElwQWDu5uJkBao/cewQkARGjSA/JzA/kmQ4VoSWPnEJArnALAP0I1BKQpQXElCh/q7A3A1RD5QFkmjxQqTh1EXAgKKp+aNoFFGIALiueNI='));
+
+  WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 55);
+  WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 50);
+  WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 45);
+  WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 40);
+  WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 35);
+  WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 30);
+  WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 25);
+  WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 20);
+
+  TesseractOCR.Debug();
+  }
 end;
