@@ -223,19 +223,15 @@ var
 
 begin
   TesseractOCR.Setup();
+end;
 
-  {
+{$IFDEF TESSERACT_TEST}
+var
+  Threshold: Int32;
+begin
   SetTargetBitmap(BitmapFromString(50, 20, 'meJwz0ZExGUWjaBQNAnTy+CE4+v//v7+HFS5BJyvt1obya1cvZaVEYpoDlIKoryjKIMNwTMTHww5Efr6e+/ftZWBg0FWTwCoYG+Y5sbf10sXz3t4eagqiaIYAnSovJaino3H//j1/LydSDccVaOtWL8nLSgYqxiOopSx26OB+rK4CIojg1SsXLS3MgCpJNRwTAYPxyeOHokLcyrLC+AWBwQ70I6argIon97UBZYEkFycbsquINxwNAY3q725hZ2MhKIjLVcBUl5oQVl6Sf/7cWSszffIMR0MfP37QVpOXEecnKIjLVUBkqCkFFO9obaipqUJOKsQbjoyA2QcYxczMTEBj8QtiddX1a5cgYQXh7t65GRhicOtIMhwZATO7j4cjMIrxCwLzINBJQD8C42jW9ElwQWDu5uJkBao/cewQkARGjSA/JzA/kmQ4VoSWPnEJArnALAP0I1BKQpQXElCh/q7A3A1RD5QFkmjxQqTh1EXAgKKp+aNoFFGIALiueNI='));
 
-  WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 55);
-  WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 50);
-  WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 45);
-  WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 40);
-  WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 35);
-  WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 30);
-  WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 25);
-  WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], 20);
-
-  TesseractOCR.Debug();
-  }
-end;
+  for Threshold := 20 to 55 with 5 do
+    WriteLn TesseractOCR.Recognize([0, 0, 50-1, 20-1], Threshold);
+end.
+{$ENDIF}
