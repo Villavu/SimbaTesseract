@@ -4,48 +4,35 @@ Tesseract is an open source text recognition (OCR) Engine.
 https://github.com/tesseract-ocr/tesseract
 
 Tesseract attempts to read any text providing the image is processed enough.
-This include will process the image with resizing and thresholding. 
-
-Or you can pass a TMufasaBitmap image to be recognized.
-
-----
-### Why Resize?
-
-Tesseract wants at least ~25 pixels height text. We can achieve this by scaling up the area.
-
-----
-### Why Threshold?
-
-If a pixel is brightness is greater than a "threshold" value the pixel is marked as white else black.
-This creates a binary image, which is an image that only contains two colors.
-
-A picture is worth a thousand words...
-
-Before:
-
-![-0.1 threshold](images/before.png)
-
-With `-0.1` threshold:
-
-![-0.1 threshold](images/threshold01.png)
-
-With `-0.9` threshold:
-
-![-0.9 threshold](images/threshold09.png)
-
-Much better!
 
 ----
 
-Now if the text is **darker** than the background a **postive** threshold can be used:
+```pascal
+function TTesseractOCR.Recognize(Area: TBox): String;
+```
 
-Before:
+This method will capture the area of the target then process the image:
 
-![dark threshold](images/dark_before.png)
+  - Resize:
+      * Tesseract wants at least ~25 pixels height text. We can achieve this by scaling up the area.
 
-With `0.3` threshold:
+  - Threshold:
+      * Thresholding segments an image into a binary image which is which is an image that only contains two colors. 
+        Assuming there is a large difference between the background and text color.
 
-![dark threshold](images/dark_threshold.png)
+  This produces:
+
+  ![before](images/before.png)
+
+  ![after](images/after.png)
+
+----
+
+```pascal
+function TTesseractOCR.Recognize(Image: TImage): String;
+```
+
+This method will do no processing of the image, however tesseract might still do some image processing internally.
 
 ----
 
@@ -57,8 +44,8 @@ This includes provides a `TesseractOCR` variable to use.
 {$I SimbaTesseract/Tesseract.simba}
 
 begin
-  // Return the text in area 100,100,200,200 with 0.9 threshold
-  WriteLn TesseractOCR.Recognize(TBox.Create(100,100,200,200), -0.9);
+  // Return the text in area 100,100,200,200
+  WriteLn TesseractOCR.Recognize(TBox.Create(100,100,200,200));
 
   // Debug what was recognized above
   TesseractOCR.Debug();
@@ -86,10 +73,10 @@ procedure TTesseractOCR.ClearBlacklist;
 procedure TTesseractOCR.SetMinMatch(Value: Single);
 
 // OCR with resizing and threshold
-function TTesseractOCR.Recognize(Area: TBox; Threshold: Single): String; overload;
+function TTesseractOCR.Recognize(Area: TBox): String; overload;
 
-// OCR on a bitmap that has been processed by yourself
-function TTesseractOCR.Recognize(Bitmap: TMufasaBitmap): String; overload;
+// OCR on an image that has been processed by yourself
+function TTesseractOCR.Recognize(Image: TImage): String; overload;
 
 // Return the previous recognize bounds
 function TTesseractOCR.GetTextBounds: TBox;

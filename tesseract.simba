@@ -6,33 +6,6 @@ Tesseract is an open source text recognition (OCR) Engine.
 https://github.com/tesseract-ocr/tesseract
 
 Tesseract attempts to read virtually any text providing the image is processed enough.
-This include will process the image with resizing and thresholding. Or you can pass you rown TMufasaBitmap image to be recognized.
-
-Why resizing?
-Tesseract wants at least ~25 pixels height text. We can achieve this by scaling up the area.
-
-What is thresholding?
-
-If a pixel is brightness is greater than a "threshold" value the pixel is marked as white else black.
-This creates a binary image (which is an image that only contains two colors)
-
-A picture is worth a thousand words...
-
-Before thresholding:
-
-with `-0.1` threshold:
-
-with `-0.9` threshold:
-
-----
-
-Now if the text is *darker* than the background a postive threshold can be used:
-
-Before thresholding:
-
-with `0.3` threshold:
-
-
 *)
 
 {$loadlib libtesseract}
@@ -46,21 +19,19 @@ type
   TTesseractMatchArray = array of TTesseractMatch;
 
   TTesseractOCR = record
-  class const
-    CHARS_UPPERCASE  = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    CHARS_LOWERCASE  = 'abcdefghijklmnopqrstuvwxyz';
-    CHARS_DIGITS     = '0123456789';
-    CHARS_NUMBER     = '0123456789,.';
-    CHARS_LETTERS    = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-    CHARS_SYMBOLS    = '.,-<>?+=()/\*@![]#~';
-    CHARS_WHITESPACE = #10+#13+#32;
-  var
+    const CHARS_UPPERCASE  = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const CHARS_LOWERCASE  = 'abcdefghijklmnopqrstuvwxyz';
+    const CHARS_DIGITS     = '0123456789';
+    const CHARS_NUMBER     = '0123456789,.';
+    const CHARS_LETTERS    = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+    const CHARS_SYMBOLS    = '.,-<>?+=()/\*@![]#~';
+    const CHARS_WHITESPACE = #10+#13+#32;
+
     ResizeMultiplier: Single;
     MinMatch: Single;
-    ThresholdRadius: Integer;
     Instance: Pointer;
     Area: TBox;
-    Bitmap: TMufasaBitmap;
+    Image: TImage;
   end;
 
 procedure TTesseractOCR.SetWhitelist(Value: String);
@@ -68,7 +39,7 @@ begin
   if (Value = '') then
     Value := #0;
 
-  Tesseract_SetVariable(Self.Instance, 'tessedit_char_whitelist', Value);
+  Tesseract_SetVariable(Self.Instance, PTessChar('tessedit_char_whitelist'), PTessChar(Value));
 end;
 
 procedure TTesseractOCR.SetBlacklist(Value: String);
@@ -76,7 +47,7 @@ begin
   if (Value = '') then
     Value := #0;
 
-  Tesseract_SetVariable(Self.Instance, 'tessedit_char_blacklist', Value);
+  Tesseract_SetVariable(Self.Instance, PTessChar('tessedit_char_blacklist'), PTessChar(Value));
 end;
 
 procedure TTesseractOCR.SetMinMatch(Value: Single);
@@ -105,7 +76,7 @@ end;
 
 function TTesseractOCR.GetText: String;
 var
-  Text: PChar;
+  Text: PTessChar;
   TextLength: Integer;
 begin
   Text := Tesseract_GetUTF8Text(Self.Instance, TextLength);
@@ -116,41 +87,40 @@ begin
     SetLength(Result, TextLength);
     if (TextLength > 0) then
       Move(Text^, Result[1], TextLength);
-    Result := Trim(StringReplace(Result, #10, LineEnding, [rfReplaceAll]));
+    Result := Trim(StringReplace(Result, #10, LINE_SEP, [rfReplaceAll]));
   end;
 
   Tesseract_FreeUTF8Text(Text);
 end;
 
-(*
- * If the text is BRIGHTER than the background the threshold will be greater than 0.
- * If the text is DARKER than the background the threshold will be less than 0.
- *
- * - Generally speaking the higher the threshold is the more the text will be eroded.
- * - Call TesseractOCR.Debug() after this to see what the image was processed into.
- *)
-function TTesseractOCR.Recognize(Area: TBox; Threshold: Single): String; overload;
+function TTesseractOCR.Recognize(Area: TBox): String; overload;
+var
+  img1, img2: TImage;
 begin
-  if (Self.Bitmap <> nil) then
+  if (Self.Image <> nil) then
   begin
-    Self.Bitmap.Free();
-    Self.Bitmap := nil;
+    Self.Image.Free();
+    Self.Image := nil;
   end;
 
   Self.Area := Area;
-  Self.Bitmap := TMufasaBitmap.CreateFromClient(Self.Area);
+  Self.Image := TImage.CreateFromTarget(Self.Area);
 
   // Assume smallest font is is 8px
   // Tesseract wants something like ~25px. 8*3.5 = 28
-  Self.Bitmap.ResizeBilinear(Trunc(Self.Bitmap.GetWidth() * Self.ResizeMultiplier), Trunc(Self.Bitmap.GetHeight() * Self.ResizeMultiplier));
-  Self.Bitmap.ThresholdSauvola(Self.ThresholdRadius, True, Threshold);
+  img1 := Self.Image.Resize(EImageResizeAlgo.BILINEAR, Self.ResizeMultiplier);
+  img2 := img1.Threshold(True);
+  Result := Self.Recognize(img2);
 
-  Result := Self.Recognize(Self.Bitmap);
+  img1.Free();
+
+  Self.Image.Free();
+  Self.Image := img2;
 end;
 
-function TTesseractOCR.Recognize(Bitmap: TMufasaBitmap): String; overload;
+function TTesseractOCR.Recognize(Bitmap: TImage): String; overload;
 begin
-  Tesseract_SetImage(Self.Instance, Bitmap.GetData(), Bitmap.GetWidth(), Bitmap.GetHeight(), 4, Bitmap.GetWidth() * 4);
+  Tesseract_SetImage(Self.Instance, Bitmap.Data, Bitmap.Width, Bitmap.Height, 4, Bitmap.Width * 4);
 
   Result := Self.GetText();
 end;
@@ -158,10 +128,10 @@ end;
 function TTesseractOCR.GetMatches(GetMatchFunc, GetCountFunc: Pointer): TTesseractMatchArray;
 type
   TGetMatchCount = function(Tesseract: Pointer): Integer;
-  TGetMatch = procedure(Tesseract: Pointer; Index: Integer; var Text: PChar; var Len: Integer; var Confidence: Single; var X1, Y1, X2, Y2: Integer);
+  TGetMatch = procedure(Tesseract: Pointer; Index: Integer; var Text: Pointer; var Len: Integer; var Confidence: Single; var X1, Y1, X2, Y2: Integer);
 var
   I, TextLen: Integer;
-  Text: PChar;
+  Text: PTessChar;
   B: TBox;
   Confidence: Single;
 begin
@@ -238,15 +208,15 @@ begin
   WriteLn('%f'.Format([Matches.Mean()]));
   WriteLn('--------------------------------------------------');
 
-  Self.Bitmap.Show();
+  Self.Image.Show();
 end;
 
 procedure TTesseractOCR.Free;
 begin
-  if (Self.Bitmap <> nil) then
+  if (Self.Image <> nil) then
   begin
-    Self.Bitmap.Free();
-    Self.Bitmap := nil;
+    Self.Image.Free();
+    Self.Image := nil;
   end;
 
   if (Self.Instance <> nil) then
@@ -262,10 +232,9 @@ procedure TTesseractOCR.Setup;
 begin
   Self.Instance := Tesseract_Create();
   Self.ResizeMultiplier := 3.5;
-  Self.ThresholdRadius := 50;
 
-  Tesseract_Init(Self.Instance, {$MACRO CURRENT_DIRECTORY} + '/tessdata', 'eng');
-  Tesseract_SetVariable(Self.Instance, 'user_defined_dpi', '70');
+  Tesseract_Init(Self.Instance, PTessChar({$MACRO DIR} + '/tessdata'), PTessChar('eng'));
+  Tesseract_SetVariable(Self.Instance, PTessChar('user_defined_dpi'), PTessChar('70'));
 
   AddOnTerminate(@Self.Free);
 end;
